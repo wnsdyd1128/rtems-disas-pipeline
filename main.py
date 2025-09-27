@@ -18,30 +18,34 @@ def main():
     makefile_path = Path(args.makefile).resolve()
     make_dir = makefile_path.parent   # Makefile 위치
 
-    # 1. Makefile 변수 읽기
+    # 1️⃣ Makefile 변수 읽기
     makevars = get_make_vars(
         makefile_path, keys=("APP", "APP_C_FILES", "BUILDDIR", "EXEEXT")
     )
 
-    # 2. 실행파일 경로 (EXEEXT 포함)
-    app_binary = make_dir / makevars.get("APP", "")
+    # 2️⃣ APP / BUILDDIR 경로 확장
+    app_binary = makevars.get("APP", "")
+    build_dir = makevars.get("BUILDDIR", ".")
     exe_ext = makevars.get("EXEEXT", "")
+
+    app_binary = (make_dir / app_binary).resolve()
+    build_dir = (make_dir / build_dir).resolve()
+
+    # EXEEXT 자동 추가
     if exe_ext and not str(app_binary).endswith(exe_ext):
         app_binary = Path(str(app_binary) + exe_ext)
 
-    # 3. 빌드 디렉토리, 소스 파일
-    build_dir = make_dir / makevars.get("BUILDDIR", ".")
     c_files = makevars.get("APP_C_FILES", "")
 
     logger.info(f"APP = {app_binary}")
     logger.info(f"BUILDDIR = {build_dir}")
     logger.info(f"APP_C_FILES = {c_files}")
 
-    # 4. 오브젝트 파일 경로 생성
+    # 3️⃣ Object 파일 경로 생성
     object_files = cfiles_to_objects(c_files, build_dir)
     logger.debug(f"Object files: {object_files}")
 
-    # 5. nm으로 함수 심볼 추출
+    # 4️⃣ nm으로 함수 추출
     all_funcs: list[str] = []
     for obj in object_files:
         funcs = extract_defined_functions(obj)
@@ -52,14 +56,14 @@ def main():
         logger.warning("No functions extracted from object files.")
         return
 
-    # 6. objdump 실행
+    # 5️⃣ objdump 실행
     objdump_out = run_objdump(app_binary)
 
-    # 7. 함수별 디스어셈블
+    # 6️⃣ 함수별 디스어셈블 필터링
     filtered = filter_functions(objdump_out, all_funcs)
 
-    # 8. 터미널 출력 + 파일 저장
-    out_path = Path('./logs') / Path(args.out)
+    # 7️⃣ 결과 export
+    out_path = Path(args.out)
     with out_path.open("w", encoding="utf-8") as f:
         f.write(f"# Disassembly Report\n\n")
         f.write(f"**Binary:** `{app_binary}`\n\n")
@@ -67,7 +71,7 @@ def main():
 
         for fname, disasm in filtered.items():
             section = f"\n## {fname}\n```\n{disasm}\n```\n"
-            print(section)   # 터미널 출력
+            print(section)
             f.write(section)
 
     logger.info(f"Disassembly exported to {out_path}")

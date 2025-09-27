@@ -1,21 +1,12 @@
 # nm_parser.py
-from pathlib import Path
 import subprocess
+from pathlib import Path
+from loguru import logger
 
-def cfiles_to_objects(c_files: str, build_dir: str | Path) -> list[Path]:
+def extract_defined_functions(obj: Path) -> list[str]:
     """
-    C 파일 리스트를 대응하는 .o 파일 경로로 변환합니다.
-    APP_C_FILES에 있는 경로는 소스 상대 경로이므로,
-    build_dir과 합쳐서 object 파일 경로를 생성합니다.
+    nm으로부터 정의된 함수(T symbol) 이름만 추출.
     """
-    build_dir = Path(build_dir)
-    return [build_dir / (Path(cfile).with_suffix(".o").name) for cfile in c_files.split()]
-
-def extract_defined_functions(obj_file: str | Path) -> list[str]:
-    """
-    nm 실행 결과에서 사용자 정의 함수 심볼만 추출
-    """
-    obj = Path(obj_file)
     if not obj.exists():
         raise FileNotFoundError(f"Object file not found: {obj}")
 
@@ -24,18 +15,26 @@ def extract_defined_functions(obj_file: str | Path) -> list[str]:
             ["sparc-rtems6-nm", str(obj)],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(
-            f"nm 실행 실패: {obj}\nstdout:\n{e.stdout}\nstderr:\n{e.stderr}"
-        ) from e
+        raise RuntimeError(f"nm 실행 실패: {obj}") from e
 
-    funcs: list[str] = []
+    funcs = []
     for line in result.stdout.splitlines():
-        parts = line.strip().split(maxsplit=2)
-        if len(parts) == 3:
-            _, sym_type, name = parts
-            if sym_type in {"T", "t"}:
-                funcs.append(name)
+        parts = line.split()
+        if len(parts) == 3 and parts[1].lower() == "t":  # T = text section
+            funcs.append(parts[2])
     return funcs
+
+
+def cfiles_to_objects(c_files: str, build_dir: Path) -> list[Path]:
+    """
+    C 파일명 → 대응하는 오브젝트 파일 경로 변환
+    """
+    if not c_files:
+        return []
+    return [
+        build_dir / (Path(c).with_suffix(".o").name)
+        for c in c_files.split()
+    ]
